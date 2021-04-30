@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #---------------------------------------------------------------------------------
-# @version: v0.1
+# @version: v0.2
 # @created: 2021-04-28
 # @author : Paolo D'Emilio
 # @brief  : Converts savefiles from cp1252 encoding (used up to 0.5.x)
@@ -21,6 +21,7 @@
 # Features:
 # converts single files, files matching a pattern, or entire directories
 # moves the original files to a backup directory
+# manages the non-standard characters coming from the bzbr squadron names
 #---------------------------------------------------------------------------------
 # Requirements:
 # python3
@@ -61,9 +62,45 @@ def args_ok(args):
     return result
 
 
+def byte_read(file_path, enc):
+    """
+    Reads a file in binary mode and operates some byte substitutions coming
+    from the 0.5.1 bzbr.txt file which wasn't a cp1252 file but used some
+    unsupported alien encoding (pun intended)
+    :param file_path: the file to read
+    :param enc: the encoding to use with the corrected data
+    :return str: the decoded text
+    """
+    try:
+        with open(file_path, 'rb') as in_file:
+            subs = [(b'\x81', b"'"), (b'\x92', b'\xed'),  (b'\x87', b'\xe1'),  (b'\xd5', b'')]
+            b_text = in_file.read()
+            for sub in subs:
+                b_text = b_text.replace(sub[0], sub[1])
+            u_text = b_text.decode(enc)
+            return u_text
+    except Exception as ex:
+        return None
+
+
+def safe_read(file_path, enc):
+    """
+    Reads a file in the specified encoding, resorting to byte_read in case of failure
+    :param file_path: the file to read
+    :param enc: the encoding to use
+    """
+    try:
+        with open(file_path, encoding=enc) as in_file:
+            text = in_file.read()
+        return text
+    except Exception as ex:
+        return byte_read(file_path, enc)
+    
+
 def convert_files(args):
     """
     Converts the specified files to utf-8
+    :param args: the arguments, specified via command line
     """
     print(f'Working directory: {args.dir_name}')
     files = os.listdir(args.dir_name)
@@ -75,11 +112,11 @@ def convert_files(args):
         if fnmatch.fnmatch(file_name, args.pattern):
             print(f'Converting file {file_name}')
             try:
-                with open(in_file_path, encoding=args.encoding) as in_file:
-                    text = in_file.read()
                 shutil.copy2(in_file_path, args.backup_dir)
-                with open(in_file_path, 'w', encoding='utf-8') as out_file:
-                    out_file.write(text)
+                text = safe_read(in_file_path, args.encoding)
+                if text:
+                    with open(in_file_path, 'w', encoding='utf-8') as out_file:
+                        out_file.write(text)
             except Exception as ex:
                 print(ex)
         else:
